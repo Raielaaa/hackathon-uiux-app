@@ -320,9 +320,9 @@ class UIUXRecommendationAPIView(generics.GenericAPIView):
         security_result = None
 
         if apply_accessibility:
-            data = self.analyze_accessibility(url)
             # accessibility_result = data
-            prompt = f"Analyze the accessibility of the URL: {data}. Provide a summary of the findings, make it in paragraph. Limit it to 2 sentences."
+            data = self.analyze_accessibility(url)
+            prompt = f"Analyze the accessibility of the URL: {data}. Provide a summary of the findings, make it in paragraph. Limit it to at most 30 words."
             accessibility_result = self.query_mistral(prompt)
         if apply_pagespeed:
             pagespeed_result = self.analyze_pagespeed(url)
@@ -424,7 +424,9 @@ class WebsiteFullScanAPIView(generics.GenericAPIView):
                         page_report["final_recommendation"]["categories"]["pagespeed"] = pagespeed_result["recommendations"]
 
                 if apply_accessibility:
-                    accessibility_result = uiux_analyzer.analyze_accessibility(page_url)
+                    data = self.analyze_accessibility(page_url)
+                    prompt = f"Analyze the accessibility of the URL: {data}. Provide a summary of the findings, make it in paragraph. Limit it to at most 30 words."
+                    accessibility_result = uiux_analyzer.query_mistral(prompt)
                     page_report["all_results"]["accessibility"] = accessibility_result
                     if "recommendations" in accessibility_result and accessibility_result["recommendations"]:
                         page_report["final_recommendation"]["categories"]["accessibility"] = accessibility_result["recommendations"]
