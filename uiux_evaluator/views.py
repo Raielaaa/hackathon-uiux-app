@@ -373,28 +373,31 @@ class WebsiteFullScanAPIView(generics.GenericAPIView):
         if base_url not in internal_pages:
             internal_pages.insert(0, base_url)  # Include main page first
 
-        analyzer = UIUXRecommendationAPIView()
+        # analyzer = UIUXRecommendationAPIView()
 
-        results = []
-        for url in internal_pages:
-            try:
-                page_speed = analyzer.analyze_pagespeed(url)
-                accessibility = analyzer.analyze_accessibility(url)
-                security_result = analyzer.analyze_ssllabs(url)
-                results.append({
-                    "url": url,
-                    "page_speed": page_speed,
-                    "accessibility": accessibility,
-                    "security": security_result
-                })
-            except Exception as e:
-                results.append({
-                    "url": url,
-                    "error": str(e)
-                })
+        # results = []
+        # for url in internal_pages:``
+        #     try:
+        #         page_speed = analyzer.analyze_pagespeed(url)
+        #         accessibility = analyzer.analyze_accessibility(url)
+        #         security_result = analyzer.analyze_ssllabs(url)
+        #         results.append({
+        #             "url": url,
+        #             "page_speed": page_speed,
+        #             "accessibility": accessibility,
+        #             "security": security_result
+        #         })
+        #     except Exception as e:
+        #         results.append({
+        #             "url": url,
+        #             "error": str(e)
+        #         })
 
+        # return Response({
+        #     "base_url": base_url,
+        #     "total_pages_scanned": len(results),
+        #     "pages": results
+        # })
         return Response({
-            "base_url": base_url,
-            "total_pages_scanned": len(results),
-            "pages": results
+            "internal_pages": internal_pages
         })
