@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "pa11y-webservice": "^4.3.1"
+  }
+}
