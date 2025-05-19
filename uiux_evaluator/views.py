@@ -6,6 +6,7 @@ import time
 from collections import Counter
 from .serializers import WebsiteURLSerializer
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 
 PAGESPEED_API_KEY = "AIzaSyANm28tCwij2AaUN3eF43g98PVE5IWBKJE"
 WAVE_API_KEY = "Ue4G4Int5398"
@@ -229,7 +230,7 @@ class UIUXRecommendationAPIView(generics.GenericAPIView):
                 data = response.json()
                 if data.get("status") == "READY":
                     break
-                time.sleep(10)
+                time.sleep(5)
 
             endpoints = data.get("endpoints", [])
             if not endpoints:
@@ -337,4 +338,63 @@ class UIUXRecommendationAPIView(generics.GenericAPIView):
         return Response({
             "final_recommendation": final_recommendation,
             "all_results": results
+        })
+
+class WebsiteFullScanAPIView(generics.GenericAPIView):
+    serializer_class = WebsiteURLSerializer
+
+    def get_internal_links(self, base_url):
+        try:
+            response = requests.get(base_url, timeout = 30)
+            soup = BeautifulSoup(response.content, "html.parser")
+            base_domain = urlparse(base_url).netloc
+
+            links = set()
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                parsed = urlparse(href)
+
+                if parsed.netloc and parsed.netloc != base_domain:
+                    continue  # External link
+
+                full_url = urljoin(base_url, href)
+                if full_url.startswith(base_url):
+                    links.add(full_url.split("#")[0])  # Remove fragment
+            return list(links)
+        except Exception as e:
+            return []
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        base_url = serializer.validated_data['url']
+
+        internal_pages = self.get_internal_links(base_url)
+        if base_url not in internal_pages:
+            internal_pages.insert(0, base_url)  # Include main page first
+
+        analyzer = UIUXRecommendationAPIView()
+
+        results = []
+        for url in internal_pages:
+            try:
+                page_speed = analyzer.analyze_pagespeed(url)
+                accessibility = analyzer.analyze_accessibility(url)
+                security_result = analyzer.analyze_ssllabs(url)
+                results.append({
+                    "url": url,
+                    "page_speed": page_speed,
+                    "accessibility": accessibility,
+                    "security": security_result
+                })
+            except Exception as e:
+                results.append({
+                    "url": url,
+                    "error": str(e)
+                })
+
+        return Response({
+            "base_url": base_url,
+            "total_pages_scanned": len(results),
+            "pages": results
         })
