@@ -1,8 +1,7 @@
 from rest_framework import generics
 from rest_framework.response import Response
 from urllib.parse import urlencode, urlparse
-import requests
-import time
+import time, json, subprocess, requests
 from collections import Counter
 from .serializers import WebsiteURLSerializer
 from bs4 import BeautifulSoup
@@ -11,7 +10,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 
 PAGESPEED_API_KEY = "AIzaSyANm28tCwij2AaUN3eF43g98PVE5IWBKJE"
-WAVE_API_KEY = "Ue4G4Int5398"
+WAVE_API_KEY = "ImJ5id2B5401"
 
 DEFAULT_TIMEOUT = 120
 
@@ -162,61 +161,59 @@ class UIUXRecommendationAPIView(generics.GenericAPIView):
         }
 
     def analyze_accessibility(self, url):
+        api_endpoint = "https://wave.webaim.org/api/request"
+        params = {
+            'key': WAVE_API_KEY,
+            'url': url,
+            'reporttype': '4'
+        }
+
         try:
-            response = self._request_with_retries('GET', url)
-            html = response.text
+            response = requests.get(api_endpoint, params=params)
+            response.raise_for_status()
+            data = response.json()
+            return data
+        except requests.exceptions.RequestException as e:
+            return {'error': str(e)}
 
-            soup = BeautifulSoup(html, 'html.parser')
+    def summarize_accessibility_report(self, data):
+        print("\n[DEBUG] Raw data received for summarization:")
+        print(json.dumps(data, indent=2))  # <-- View the full JSON from WAVE API
 
-            # Basic checks
-            images = soup.find_all('img')
-            images_missing_alt = [img for img in images if not img.has_attr('alt') or not img['alt'].strip()]
+        if 'error' in data:
+            print("[DEBUG] Detected 'error' key in data.")
+            return f"Accessibility analysis failed with error: {data['error']}"
 
-            title_tag = soup.find('title')
-            missing_title = title_tag is None or not title_tag.text.strip()
+        # No 'all_results' or 'accessibility' key—access data directly
+        status = data.get('status', {})
+        print("[DEBUG] Status section:", status)
 
-            # ARIA landmarks (e.g., role="banner", "navigation", "main", "contentinfo")
-            landmarks = soup.find_all(attrs={"role": True})
-            missing_landmarks = len(landmarks) == 0
+        if not status.get('success', False):
+            print("[DEBUG] Accessibility analysis unsuccessful.")
+            return f"Accessibility analysis request was not successful. HTTP Status: {status.get('httpstatuscode', 'Unknown')}"
 
-            # Form elements without labels
-            form_elements = soup.find_all(['input', 'select', 'textarea'])
-            unlabeled_elements = []
-            for el in form_elements:
-                id_attr = el.get('id')
-                if id_attr:
-                    label = soup.find('label', attrs={'for': id_attr})
-                    if not label:
-                        unlabeled_elements.append(el)
-                else:
-                    # no id means can't be referenced by label
-                    unlabeled_elements.append(el)
+        stats = data.get('statistics', {})
+        print("[DEBUG] Statistics section:", stats)
 
-            issues = {
-                'images_missing_alt': len(images_missing_alt),
-                'missing_title': missing_title,
-                'missing_landmarks': missing_landmarks,
-                'unlabeled_form_elements': len(unlabeled_elements),
-            }
+        page_title = stats.get('pagetitle', 'Unknown page')
+        page_url = stats.get('pageurl', 'Unknown URL')
+        total_elements = stats.get('totalelements', 0)
 
-            recommendations = []
+        categories = data.get('categories', {})
+        print("[DEBUG] Categories section:", categories)
 
-            if issues['images_missing_alt'] > 0:
-                recommendations.append(f"Found {issues['images_missing_alt']} images missing alt attributes. Add descriptive alt text for all images.")
-            if issues['missing_title']:
-                recommendations.append("Missing or empty <title> tag. Add a descriptive page title.")
-            if issues['missing_landmarks']:
-                recommendations.append("No ARIA landmark roles found. Use roles like 'banner', 'navigation', 'main', and 'contentinfo' for better navigation.")
-            if issues['unlabeled_form_elements'] > 0:
-                recommendations.append(f"Found {issues['unlabeled_form_elements']} form elements without associated labels. Ensure all form inputs have labels.")
+        errors = categories.get('error', {}).get('count', 0)
+        error_desc = categories.get('error', {}).get('description', 'Errors')
+        contrast_issues = categories.get('contrast', {}).get('count', 0)
+        alerts = categories.get('alert', {}).get('count', 0)
+        features = categories.get('feature', {}).get('count', 0)
+        structure = categories.get('structure', {}).get('count', 0)
+        aria_issues = categories.get('aria', {}).get('count', 0)
 
-            return {
-                'accessibility_summary': issues,
-                'recommendations': recommendations
-            }
-
-        except Exception as e:
-            return {'error': f"Accessibility check error: {str(e)}"}
+        return (f"The accessibility analysis for '{page_title}' ({page_url}) examined {total_elements} elements. "
+                f"Found {errors} errors related to {error_desc.lower()}, {contrast_issues} contrast issue(s), "
+                f"{alerts} alerts, {features} feature(s), {structure} structural element(s), "
+                f"and {aria_issues} ARIA issues.")
 
     def analyze_ssllabs(self, url):
         try:
@@ -323,7 +320,10 @@ class UIUXRecommendationAPIView(generics.GenericAPIView):
         security_result = None
 
         if apply_accessibility:
-            accessibility_result = self.analyze_accessibility(url)
+            data = self.analyze_accessibility(url)
+            # accessibility_result = data
+            prompt = f"Analyze the accessibility of the URL: {data}. Provide a summary of the findings, make it in paragraph. Limit it to 2 sentences."
+            accessibility_result = self.query_mistral(prompt)
         if apply_pagespeed:
             pagespeed_result = self.analyze_pagespeed(url)
         if apply_security:
@@ -341,6 +341,21 @@ class UIUXRecommendationAPIView(generics.GenericAPIView):
             "final_recommendation": final_recommendation,
             "all_results": results
         })
+
+    def query_mistral(self, prompt):
+        try:
+            # Run the ollama command with the prompt
+            result = subprocess.run(
+                ['ollama', 'run', 'mistral', prompt],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            # Return the model's output (stdout)
+            return result.stdout.strip()
+        except subprocess.CalledProcessError as e:
+            # Handle errors if the command fails
+            return f"Error running Ollama: {e}"
 
 class WebsiteFullScanAPIView(generics.GenericAPIView):
     serializer_class = WebsiteURLSerializer
