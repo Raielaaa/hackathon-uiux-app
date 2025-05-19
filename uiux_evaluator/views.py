@@ -424,7 +424,7 @@ class WebsiteFullScanAPIView(generics.GenericAPIView):
                         page_report["final_recommendation"]["categories"]["pagespeed"] = pagespeed_result["recommendations"]
 
                 if apply_accessibility:
-                    data = self.analyze_accessibility(page_url)
+                    data = uiux_analyzer.analyze_accessibility(page_url)
                     prompt = f"Analyze the accessibility of the URL: {data}. Provide a summary of the findings, make it in paragraph. Limit it to at most 30 words."
                     accessibility_result = uiux_analyzer.query_mistral(prompt)
                     page_report["all_results"]["accessibility"] = accessibility_result
