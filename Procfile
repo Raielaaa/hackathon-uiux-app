@@ -1,0 +1,1 @@
+web: gunicorn hackathon_app.wsgi --log-file -
