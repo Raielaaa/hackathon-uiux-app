@@ -4,7 +4,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'django-insecure-default-key-for-dev-only'
 
-DEBUG = False
+DEBUG = True
 
 ALLOWED_HOSTS = ['*']  # Accept all hosts (better specify your Render domain in production)
 
@@ -21,7 +21,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',  # Serve static files
+    # 'whitenoise.middleware.WhiteNoiseMiddleware',  # Serve static files
     'corsheaders.middleware.CorsMiddleware',       # CORS middleware (must be before CommonMiddleware)
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',

@@ -343,26 +343,23 @@ class UIUXRecommendationAPIView(generics.GenericAPIView):
 class WebsiteFullScanAPIView(generics.GenericAPIView):
     serializer_class = WebsiteURLSerializer
 
-    def get_internal_links(self, base_url):
+    def get_internal_links(base_url):
+        internal_links = set()
         try:
-            response = requests.get(base_url, timeout = 30)
-            soup = BeautifulSoup(response.content, "html.parser")
-            base_domain = urlparse(base_url).netloc
+            response = requests.get(base_url, timeout=10)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            domain = urlparse(base_url).netloc
 
-            links = set()
-            for a in soup.find_all("a", href=True):
-                href = a["href"]
-                parsed = urlparse(href)
-
-                if parsed.netloc and parsed.netloc != base_domain:
-                    continue  # External link
-
+            for tag in soup.find_all("a", href=True):
+                href = tag['href']
                 full_url = urljoin(base_url, href)
-                if full_url.startswith(base_url):
-                    links.add(full_url.split("#")[0])  # Remove fragment
-            return list(links)
+                if urlparse(full_url).netloc == domain:
+                    internal_links.add(full_url)
+
         except Exception as e:
-            return []
+            print(f"Error fetching or parsing {base_url}: {e}")
+
+        return list(internal_links)
 
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
