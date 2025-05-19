@@ -7,6 +7,8 @@ from collections import Counter
 from .serializers import WebsiteURLSerializer
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 
 PAGESPEED_API_KEY = "AIzaSyANm28tCwij2AaUN3eF43g98PVE5IWBKJE"
 WAVE_API_KEY = "Ue4G4Int5398"
@@ -343,11 +345,19 @@ class UIUXRecommendationAPIView(generics.GenericAPIView):
 class WebsiteFullScanAPIView(generics.GenericAPIView):
     serializer_class = WebsiteURLSerializer
 
-    def get_internal_links(base_url):
+    def get_internal_links(self, base_url):
         internal_links = set()
+
+        options = Options()
+        options.add_argument('--headless')
+        options.add_argument('--disable-gpu')
+        options.add_argument('--no-sandbox')
+        driver = webdriver.Chrome(options=options)
+
         try:
-            response = requests.get(base_url, timeout=10)
-            soup = BeautifulSoup(response.text, 'html.parser')
+            driver.get(base_url)
+            time.sleep(3)
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
             domain = urlparse(base_url).netloc
 
             for tag in soup.find_all("a", href=True):
@@ -357,44 +367,105 @@ class WebsiteFullScanAPIView(generics.GenericAPIView):
                     internal_links.add(full_url)
 
         except Exception as e:
-            print(f"Error fetching or parsing {base_url}: {e}")
+            print(f"Error rendering page: {e}")
+        finally:
+            driver.quit()
 
         return list(internal_links)
 
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
+        data = request.data
         base_url = serializer.validated_data['url']
+        apply_accessibility = data.get("is_accessibility_applied", False)
+        apply_pagespeed = data.get("is_pagespeed_applied", False)
+        apply_security = data.get("is_security_applied", False)
 
-        internal_pages = self.get_internal_links(base_url)
-        if base_url not in internal_pages:
-            internal_pages.insert(0, base_url)  # Include main page first
+        uiux_analyzer = UIUXRecommendationAPIView()
 
-        # analyzer = UIUXRecommendationAPIView()
+        scanned_pages = self.get_internal_links(base_url)
+        if base_url not in scanned_pages:
+            scanned_pages.insert(0, base_url)
 
-        # results = []
-        # for url in internal_pages:``
-        #     try:
-        #         page_speed = analyzer.analyze_pagespeed(url)
-        #         accessibility = analyzer.analyze_accessibility(url)
-        #         security_result = analyzer.analyze_ssllabs(url)
-        #         results.append({
-        #             "url": url,
-        #             "page_speed": page_speed,
-        #             "accessibility": accessibility,
-        #             "security": security_result
-        #         })
-        #     except Exception as e:
-        #         results.append({
-        #             "url": url,
-        #             "error": str(e)
-        #         })
+        scan_results = []
 
-        # return Response({
-        #     "base_url": base_url,
-        #     "total_pages_scanned": len(results),
-        #     "pages": results
-        # })
+        for page_url in scanned_pages:
+            try:
+                page_report = {
+                    "url": page_url,
+                    "all_results": {},
+                    "final_recommendation": {
+                        "summary": "UI/UX recommendations categorized by service.",
+                        "categories": {}
+                    }
+                }
+
+                if apply_pagespeed:
+                    pagespeed_result = uiux_analyzer.analyze_pagespeed(page_url)
+                    page_report["all_results"]["pagespeed"] = pagespeed_result
+                    if "recommendations" in pagespeed_result and pagespeed_result["recommendations"]:
+                        page_report["final_recommendation"]["categories"]["pagespeed"] = pagespeed_result["recommendations"]
+
+                if apply_accessibility:
+                    accessibility_result = uiux_analyzer.analyze_accessibility(page_url)
+                    page_report["all_results"]["accessibility"] = accessibility_result
+                    if "recommendations" in accessibility_result and accessibility_result["recommendations"]:
+                        page_report["final_recommendation"]["categories"]["accessibility"] = accessibility_result["recommendations"]
+
+                if apply_security:
+                    security_result = uiux_analyzer.analyze_ssllabs(page_url)
+                    page_report["all_results"]["security"] = security_result
+                    if "recommendations" in security_result and security_result["recommendations"]:
+                        page_report["final_recommendation"]["categories"]["security"] = security_result["recommendations"]
+
+                scan_results.append(page_report)
+
+            except Exception as e:
+                scan_results.append({
+                    "url": page_url,
+                    "error": f"Failed to analyze {page_url}: {str(e)}"
+                })
+
         return Response({
-            "internal_pages": internal_pages
+            "total_pages_scanned": len(scan_results),
+            "results": scan_results
         })
+
+    def aggregate_results(self, results):
+        categorized_recommendations = {
+            'pagespeed': [],
+            'accessibility': [],
+            'security': []
+        }
+
+        for result in results:
+            # Skip errored pages
+            if 'error' in result:
+                continue
+
+            # Check each service result
+            for service_name in ['pagespeed', 'accessibility', 'security']:
+                if service_name in result:
+                    service_result = result[service_name]
+                    if isinstance(service_result, dict) and 'recommendations' in service_result:
+                        recs = service_result['recommendations']
+                        if recs:
+                            categorized_recommendations[service_name].extend(recs)
+
+        # Filter out empty categories
+        categorized_recommendations = {
+            k: v for k, v in categorized_recommendations.items() if v
+        }
+
+        if not categorized_recommendations:
+            return {
+                "summary": "No UI/UX feedback could be generated from the analysis.",
+                "categories": {}
+            }
+
+        return {
+            'summary': "UI/UX recommendations categorized by service.",
+            'categories': categorized_recommendations
+        }
