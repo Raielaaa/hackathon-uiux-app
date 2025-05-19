@@ -61,6 +61,7 @@ DATABASES = {
 # CORS settings to allow your frontend domain only
 CORS_ALLOWED_ORIGINS = [
     "https://auto-ux.vercel.app",
+    "http://localhost:5173/"
 ]
 
 # Static files settings
