@@ -344,18 +344,20 @@ class UIUXRecommendationAPIView(generics.GenericAPIView):
 
     def query_mistral(self, prompt):
         try:
-            # Run the ollama command with the prompt
             result = subprocess.run(
-                ['ollama', 'run', 'mistral', prompt],
-                capture_output=True,
-                text=True,
-                check=True
+                ['ollama', 'run', 'mistral'],
+                input = prompt,
+                capture_output = True,
+                text = True,
+                encoding = 'utf-8',
+                errors = 'ignore',
+                check = True
             )
-            # Return the model's output (stdout)
             return result.stdout.strip()
         except subprocess.CalledProcessError as e:
-            # Handle errors if the command fails
-            return f"Error running Ollama: {e}"
+            return f"Error running Ollama: {e.stderr.strip() or str(e)}"
+        except FileNotFoundError:
+            return "Error: 'ollama' command not found. Ensure Ollama is installed and added to your system PATH."
 
 class WebsiteFullScanAPIView(generics.GenericAPIView):
     serializer_class = WebsiteURLSerializer
