@@ -10,7 +10,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 
 PAGESPEED_API_KEY = "AIzaSyANm28tCwij2AaUN3eF43g98PVE5IWBKJE"
-WAVE_API_KEY = "ImJ5id2B5401"
+WAVE_API_KEY = "Y9zumtvP5402"
 
 DEFAULT_TIMEOUT = 120
 
